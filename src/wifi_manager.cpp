@@ -369,25 +369,22 @@ void WiFiManager::sendBufferedData()
               wifiGVRET.numAvailableBytes());
     }
 
-    // ===== SAFEGUARD #1: heap =====
+    // safeguard: heap
     if (heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < 16000)
         return;
 
-    // ===== SAFEGUARD #2: backlog =====
-    if (wifiGVRET.numAvailableBytes() > 8192)
+    // safeguard: backlog (soft trim, no corruption risk now)
+    size_t available = wifiGVRET.numAvailableBytes();
+    if (available > 8192)
     {
-        DEBUG("[WARN] buffer overflow protection, dropping\n");
-        wifiGVRET.clearBufferedBytes();
-        return;
+        DEBUG("[WARN] trimming backlog\n");
+        wifiGVRET.consume(available / 2);
     }
 
     static uint32_t lastSendUs = 0;
-    const uint32_t nowUs = micros();
+    uint32_t nowUs = micros();
 
-    // batching window (same concept, no memcpy)
-    const uint32_t BATCH_US = 1000;
-
-    if ((nowUs - lastSendUs) < BATCH_US)
+    if ((nowUs - lastSendUs) < 1000)
         return;
 
     lastSendUs = nowUs;
@@ -397,23 +394,24 @@ void WiFiManager::sendBufferedData()
         if (!(SysSettings.clientNodes[i] && SysSettings.clientNodes[i].connected()))
             continue;
 
-        size_t available = wifiGVRET.numAvailableBytes();
-        if (available == 0)
-            return;
-
-        uint8_t *buf = wifiGVRET.getBufferedBytes();
-
-        // ===== ZERO-COPY SEND =====
-        size_t sent = SysSettings.clientNodes[i].write(buf, available);
-
-        if (sent > 0)
+        while (true)
         {
-            wifiGVRET.consume(sent);
-        }
-        else
-        {
-            DEBUG("[WARN][wifi] stalled send (%u bytes pending)\n",
-                  (unsigned)available);
+            size_t linear = wifiGVRET.getLinearSize();
+            if (linear == 0)
+                break;
+
+            uint8_t *ptr = wifiGVRET.getBufferedBytes();
+
+            size_t sent = SysSettings.clientNodes[i].write(ptr, linear);
+
+            if (sent > 0)
+            {
+                wifiGVRET.consume(sent);
+            }
+            else
+            {
+                break; // TCP backpressure
+            }
         }
 
         taskYIELD();

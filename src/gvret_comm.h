@@ -4,7 +4,8 @@
 #include "esp32_can.h"
 #include "commbuffer.h"
 
-enum STATE {
+enum STATE
+{
     IDLE,
     GET_COMMAND,
     BUILD_CAN_FRAME,
@@ -43,12 +44,12 @@ enum GVRET_PROTOCOL
     PROTO_GET_FD = 22,
 };
 
-class GVRET_Comm_Handler: public CommBuffer
+class GVRET_Comm_Handler : public CommBuffer
 {
 public:
     GVRET_Comm_Handler();
     void processIncomingByte(uint8_t in_byte);
-    
+
 private:
     CAN_FRAME build_out_frame;
     CAN_FRAME_FD build_out_fd_frame;
@@ -59,4 +60,11 @@ private:
     uint32_t build_int;
 
     uint8_t checksumCalc(uint8_t *buffer, int length);
+
+    uint8_t transmitBuffer[256];
+    uint16_t transmitBufferLength;
+
+    void txBegin();
+    void txWrite(uint8_t b);
+    void txEnd();
 };

@@ -2,153 +2,151 @@
 #include "Logger.h"
 #include "gvret_comm.h"
 
+static DRAM_ATTR uint8_t buffer[CB_SIZE];
+
+CommBuffer txBuffer;
+
 CommBuffer::CommBuffer()
 {
-    transmitBufferLength = 0;
+    head = 0;
+    tail = 0;
 }
 
 size_t CommBuffer::numAvailableBytes()
 {
-    return transmitBufferLength;
+    if (head >= tail)
+        return head - tail;
+    else
+        return CB_SIZE - tail + head;
 }
 
-void CommBuffer::clearBufferedBytes()
+size_t CommBuffer::getLinearSize()
 {
-    transmitBufferLength = 0;
+    if (head >= tail)
+        return head - tail;
+    else
+        return CB_SIZE - tail;
 }
 
-uint8_t* CommBuffer::getBufferedBytes()
+uint8_t *CommBuffer::getBufferedBytes()
 {
-    return transmitBuffer;
-}
-
-//a bit faster version that blasts through the copy more efficiently.
-void CommBuffer::sendBytesToBuffer(uint8_t *bytes, size_t length)
-{
-    memcpy(&transmitBuffer[transmitBufferLength], bytes, length);
-    transmitBufferLength += length;
-}
-
-void CommBuffer::sendByteToBuffer(uint8_t byt)
-{
-    transmitBuffer[transmitBufferLength++] = byt;
-}
-
-void CommBuffer::sendString(String str)
-{
-    char buff[300];
-    str.toCharArray(buff, 300);
-    sendCharString(buff);
-}
-
-void CommBuffer::sendCharString(char *str)
-{
-    char *p = str;
-    int i = 0;
-    while (*p)
-    {
-        sendByteToBuffer(*p++);
-        i++;
-    }
-    Logger::debug("Queued %i bytes", i);
-}
-
-void CommBuffer::sendFrameToBuffer(CAN_FRAME &frame, int whichBus)
-{
-    uint8_t temp;
-    size_t writtenBytes;
-    if (settings.useBinarySerialComm) {
-        if (frame.extended) frame.id |= 1 << 31;
-        transmitBuffer[transmitBufferLength++] = 0xF1;
-        transmitBuffer[transmitBufferLength++] = 0; //0 = canbus frame sending
-        uint32_t now = micros();
-        transmitBuffer[transmitBufferLength++] = (uint8_t)(now & 0xFF);
-        transmitBuffer[transmitBufferLength++] = (uint8_t)(now >> 8);
-        transmitBuffer[transmitBufferLength++] = (uint8_t)(now >> 16);
-        transmitBuffer[transmitBufferLength++] = (uint8_t)(now >> 24);
-        transmitBuffer[transmitBufferLength++] = (uint8_t)(frame.id & 0xFF);
-        transmitBuffer[transmitBufferLength++] = (uint8_t)(frame.id >> 8);
-        transmitBuffer[transmitBufferLength++] = (uint8_t)(frame.id >> 16);
-        transmitBuffer[transmitBufferLength++] = (uint8_t)(frame.id >> 24);
-        transmitBuffer[transmitBufferLength++] = frame.length + (uint8_t)(whichBus << 4);
-        for (int c = 0; c < frame.length; c++) {
-            transmitBuffer[transmitBufferLength++] = frame.data.uint8[c];
-        }
-        //temp = checksumCalc(buff, 11 + frame.length);
-        temp = 0;
-        transmitBuffer[transmitBufferLength++] = temp;
-        //Serial.write(buff, 12 + frame.length);
-    } else {
-        writtenBytes = sprintf((char *)&transmitBuffer[transmitBufferLength], "%d - %x", micros(), frame.id);
-        transmitBufferLength += writtenBytes;
-        if (frame.extended) sprintf((char *)&transmitBuffer[transmitBufferLength], " X ");
-        else sprintf((char *)&transmitBuffer[transmitBufferLength], " S ");
-        transmitBufferLength += 3;
-        writtenBytes = sprintf((char *)&transmitBuffer[transmitBufferLength], "%i %i", whichBus, frame.length);
-        transmitBufferLength += writtenBytes;
-        for (int c = 0; c < frame.length; c++) {
-            writtenBytes = sprintf((char *)&transmitBuffer[transmitBufferLength], " %x", frame.data.uint8[c]);
-            transmitBufferLength += writtenBytes;
-        }
-        sprintf((char *)&transmitBuffer[transmitBufferLength], "\r\n");
-        transmitBufferLength += 2;
-    }
-}
-
-void CommBuffer::sendFrameToBuffer(CAN_FRAME_FD &frame, int whichBus)
-{
-    uint8_t temp;
-    size_t writtenBytes;
-    if (settings.useBinarySerialComm) {
-        if (frame.extended) frame.id |= 1 << 31;
-        transmitBuffer[transmitBufferLength++] = 0xF1;
-        transmitBuffer[transmitBufferLength++] = PROTO_BUILD_FD_FRAME;
-        uint32_t now = micros();
-        transmitBuffer[transmitBufferLength++] = (uint8_t)(now & 0xFF);
-        transmitBuffer[transmitBufferLength++] = (uint8_t)(now >> 8);
-        transmitBuffer[transmitBufferLength++] = (uint8_t)(now >> 16);
-        transmitBuffer[transmitBufferLength++] = (uint8_t)(now >> 24);
-        transmitBuffer[transmitBufferLength++] = (uint8_t)(frame.id & 0xFF);
-        transmitBuffer[transmitBufferLength++] = (uint8_t)(frame.id >> 8);
-        transmitBuffer[transmitBufferLength++] = (uint8_t)(frame.id >> 16);
-        transmitBuffer[transmitBufferLength++] = (uint8_t)(frame.id >> 24);
-        transmitBuffer[transmitBufferLength++] = frame.length;
-        transmitBuffer[transmitBufferLength++] = (uint8_t)(whichBus);
-        for (int c = 0; c < frame.length; c++) {
-            transmitBuffer[transmitBufferLength++] = frame.data.uint8[c];
-        }
-        //temp = checksumCalc(buff, 11 + frame.length);
-        temp = 0;
-        transmitBuffer[transmitBufferLength++] = temp;
-        //Serial.write(buff, 12 + frame.length);
-    } else {
-        writtenBytes = sprintf((char *)&transmitBuffer[transmitBufferLength], "%d - %x", micros(), frame.id);
-        transmitBufferLength += writtenBytes;
-        if (frame.extended) sprintf((char *)&transmitBuffer[transmitBufferLength], " X ");
-        else sprintf((char *)&transmitBuffer[transmitBufferLength], " S ");
-        transmitBufferLength += 3;
-        writtenBytes = sprintf((char *)&transmitBuffer[transmitBufferLength], "%i %i", whichBus, frame.length);
-        transmitBufferLength += writtenBytes;
-        for (int c = 0; c < frame.length; c++) {
-            writtenBytes = sprintf((char *)&transmitBuffer[transmitBufferLength], " %x", frame.data.uint8[c]);
-            transmitBufferLength += writtenBytes;
-        }
-        sprintf((char *)&transmitBuffer[transmitBufferLength], "\r\n");
-        transmitBufferLength += 2;
-    }
+    return &buffer[tail];
 }
 
 void CommBuffer::consume(size_t n)
 {
-    if (n == 0) return;
+    size_t available = numAvailableBytes();
+    if (n > available)
+        n = available;
 
-    if (n >= transmitBufferLength)
+    tail = (tail + n) % CB_SIZE;
+}
+
+void CommBuffer::clearBufferedBytes()
+{
+    head = 0;
+    tail = 0;
+}
+
+void CommBuffer::sendByteToBuffer(uint8_t b)
+{
+    size_t next = (head + 1) % CB_SIZE;
+
+    // overwrite oldest if full (safe streaming behavior)
+    if (next == tail)
     {
-        transmitBufferLength = 0;
-        return;
+        tail = (tail + 1) % CB_SIZE;
     }
 
-    // shift remaining bytes to front
-    memmove(transmitBuffer, transmitBuffer + n, transmitBufferLength - n);
-    transmitBufferLength -= n;
+    buffer[head] = b;
+    head = next;
+}
+
+void CommBuffer::sendString(const char *str)
+{
+    if (!str)
+        return;
+
+    while (*str)
+    {
+        sendByteToBuffer((uint8_t)*str++);
+    }
+}
+
+void CommBuffer::sendString(const String &str)
+{
+    for (size_t i = 0; i < str.length(); i++)
+    {
+        sendByteToBuffer((uint8_t)str[i]);
+    }
+}
+
+void CommBuffer::sendFrameToBuffer(CAN_FRAME &frame, int whichBus)
+{
+    if (!settings.useBinarySerialComm)
+        return;
+
+    uint32_t id = frame.id;
+    if (frame.extended)
+        id |= (1UL << 31);
+
+    sendByteToBuffer(0xF1);
+    sendByteToBuffer(0x00); // CMD
+
+    uint32_t now = micros();
+
+    sendByteToBuffer((uint8_t)(now));
+    sendByteToBuffer((uint8_t)(now >> 8));
+    sendByteToBuffer((uint8_t)(now >> 16));
+    sendByteToBuffer((uint8_t)(now >> 24));
+
+    sendByteToBuffer((uint8_t)(frame.id));
+    sendByteToBuffer((uint8_t)(frame.id >> 8));
+    sendByteToBuffer((uint8_t)(frame.id >> 16));
+    sendByteToBuffer((uint8_t)(frame.id >> 24));
+
+    // 🔥 THIS IS THE MOST IMPORTANT LINE
+    sendByteToBuffer(frame.length + ((uint8_t)whichBus << 4));
+
+    for (int i = 0; i < frame.length; i++)
+    {
+        sendByteToBuffer(frame.data.uint8[i]);
+    }
+
+    sendByteToBuffer(0); // checksum (must match original behavior)
+}
+
+void CommBuffer::sendFrameToBuffer(CAN_FRAME_FD &frame, int whichBus)
+{
+    if (!settings.useBinarySerialComm)
+        return;
+
+    uint32_t id = frame.id;
+    if (frame.extended)
+        id |= (1UL << 31);
+
+    sendByteToBuffer(0xF1);
+    sendByteToBuffer(PROTO_BUILD_FD_FRAME);
+
+    uint32_t now = micros();
+
+    sendByteToBuffer((uint8_t)(now));
+    sendByteToBuffer((uint8_t)(now >> 8));
+    sendByteToBuffer((uint8_t)(now >> 16));
+    sendByteToBuffer((uint8_t)(now >> 24));
+
+    sendByteToBuffer((uint8_t)(frame.id));
+    sendByteToBuffer((uint8_t)(frame.id >> 8));
+    sendByteToBuffer((uint8_t)(frame.id >> 16));
+    sendByteToBuffer((uint8_t)(frame.id >> 24));
+
+    sendByteToBuffer(frame.length);
+    sendByteToBuffer((uint8_t)whichBus);
+
+    for (int i = 0; i < frame.length; i++)
+    {
+        sendByteToBuffer(frame.data.uint8[i]);
+    }
+
+    sendByteToBuffer(0);
 }

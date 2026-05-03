@@ -3,22 +3,32 @@
 #include "config.h"
 #include "esp32_can.h"
 
+#define CB_SIZE 15360
+
 class CommBuffer
 {
 public:
     CommBuffer();
+
+    uint8_t *getBufferedBytes();
     size_t numAvailableBytes();
-    uint8_t* getBufferedBytes();
-    void clearBufferedBytes();
-    void sendFrameToBuffer(CAN_FRAME &frame, int whichBus);
-    void sendFrameToBuffer(CAN_FRAME_FD &frame, int whichBus);
-    void sendBytesToBuffer(uint8_t *bytes, size_t length);
-    void sendByteToBuffer(uint8_t byt);
-    void sendString(String str);
-    void sendCharString(char *str);
+    size_t getLinearSize(); // NEW
     void consume(size_t n);
 
-protected:
-    byte transmitBuffer[WIFI_BUFF_SIZE];
-    int transmitBufferLength; //not creating a ring buffer. The buffer should be large enough to never overflow
+    void clearBufferedBytes();
+
+    // existing API (unchanged)
+    void sendByteToBuffer(uint8_t b);
+
+    // restore missing APIs
+    void sendString(const char *str);
+    void sendString(const String &str);
+
+    // GVRET compatibility (keep signature)
+    void sendFrameToBuffer(CAN_FRAME &frame, int whichBus);
+    void sendFrameToBuffer(CAN_FRAME_FD &frame, int whichBus);
+
+private:
+    volatile size_t head;
+    volatile size_t tail;
 };
