@@ -13,6 +13,11 @@ static volatile bool errorState = false;
 
 static constexpr uint32_t BLINK_TIME_MS = 30;
 
+static volatile bool wifiSTAActive = false;
+static volatile bool wifiAPActive = false;
+static volatile bool wifiSTAConnected = false;
+static volatile bool wifiAPClientConnected = false;
+
 static void applyColor(uint8_t r, uint8_t g, uint8_t b)
 {
     pixel.setPixelColor(0, pixel.Color(r, g, b));
@@ -45,6 +50,44 @@ void rgbStatusLoop()
 {
     uint32_t now = millis();
 
+    bool slowBlink = ((now % 1000) < BLINK_TIME_MS);
+
+    // ===== WIFI OVERLAY =====
+
+    bool wifiOverlayActive = false;
+
+    uint8_t wifiR = 0;
+    uint8_t wifiG = 0;
+    uint8_t wifiB = 0;
+
+    // ===== STA =====
+    if (wifiSTAActive)
+    {
+        // disconnected -> orange blink
+        if (!wifiSTAConnected && slowBlink)
+        {
+            wifiOverlayActive = true;
+
+            wifiR = 255;
+            wifiG = 64;
+            wifiB = 0;
+        }
+    }
+
+    // ===== AP =====
+    else if (wifiAPActive)
+    {
+        // no client -> white blink
+        if (!wifiAPClientConnected && slowBlink)
+        {
+            wifiOverlayActive = true;
+
+            wifiR = 255;
+            wifiG = 255;
+            wifiB = 255;
+        }
+    }
+
     // Highest priority
     if (errorState)
     {
@@ -55,23 +98,60 @@ void rgbStatusLoop()
     bool rxActive = (int32_t)(rxUntil - now) > 0;
     bool txActive = (int32_t)(txUntil - now) > 0;
 
+    uint8_t r = 0;
+    uint8_t g = 0;
+    uint8_t b = 0;
+
     // RX + TX simultaneously
     if (rxActive && txActive)
     {
-        applyColor(0, 255, 255);
+        g = 255;
+        b = 255;
     }
     else if (rxActive)
     {
-        applyColor(0, 0, 255);
+        b = 255;
     }
     else if (txActive)
     {
-        applyColor(0, 255, 0);
+        g = 255;
     }
-    else
+
+    // ===== WIFI OVERLAY =====
+    if (wifiOverlayActive)
     {
-        applyColor(0, 0, 0);
+        r = wifiR;
+        g = wifiG;
+        b = wifiB;
     }
+
+    applyColor(r, g, b);
+}
+
+void rgbWifiSTAConnected(bool connected)
+{
+    wifiSTAConnected = connected;
+}
+
+void rgbWifiAPClientConnected(bool connected)
+{
+    wifiAPClientConnected = connected;
+}
+
+void rgbWifiModeSTA(bool active)
+{
+    wifiSTAActive = active;
+
+    if (active)
+        wifiAPActive = false;
+}
+
+void rgbWifiModeAP(bool active)
+{
+    wifiAPActive = active;
+
+    if (active)
+        wifiSTAActive = false;
 }
 
 #endif

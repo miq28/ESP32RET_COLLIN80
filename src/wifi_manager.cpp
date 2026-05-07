@@ -8,6 +8,7 @@
 #include "debug.h"
 #include "heap_probe.h"
 #include "esp_phy_init.h"
+#include "rgb_status.h"
 
 #define OTA_PORT 3232
 #define TELNET_PORT 23
@@ -104,7 +105,8 @@ static void setupWiFiEvents()
                  {
                      DEBUG("WiFi disconnected: %d\n", info.wifi_sta_disconnected.reason);
                      stopOTA();
-                     MDNS.end(); },
+                     MDNS.end(); 
+                    rgbWifiSTAConnected(false); },
                  ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
 
     WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t)
@@ -115,6 +117,7 @@ static void setupWiFiEvents()
                      // ===== OTA =====
                      initOTAHandlers();
                      startOTA();
+                     rgbWifiSTAConnected(true);
 
                      // ===== MDNS =====
                      if (!MDNS.begin(deviceName))
@@ -146,7 +149,10 @@ void WiFiManager::setup()
 
     if (settings.wifiMode == 1)
     {
-        Serial.println("Wifi mode: STA");
+        DEBUG_PRINTLN("Wifi mode: STA");
+
+        rgbWifiModeSTA(true);
+        rgbWifiModeAP(false);
 
         WiFi.mode(WIFI_STA);
         WiFi.disconnect(true, true); // erase + stop
@@ -168,7 +174,10 @@ void WiFiManager::setup()
     }
     else if (settings.wifiMode == 2)
     {
-        Serial.println("Wifi mode: AP");
+        DEBUG_PRINTLN("Wifi mode: AP");
+
+        rgbWifiModeSTA(false);
+        rgbWifiModeAP(true);
 
         WiFi.mode(WIFI_AP);
         WiFi.disconnect(true); // reset state
@@ -188,7 +197,11 @@ void WiFiManager::setup()
     }
     else
     {
-        Serial.println("Wifi mode: OFF");
+        DEBUG_PRINTLN("Wifi mode: OFF");
+
+        rgbWifiModeSTA(false);
+        rgbWifiModeAP(false);
+
         WiFi.mode(WIFI_OFF);
     }
 
@@ -199,7 +212,8 @@ void WiFiManager::setup()
 
 static size_t getFrameSize(const uint8_t *buf, size_t available)
 {
-    if (available < 2) return 0;
+    if (available < 2)
+        return 0;
 
     uint8_t cmd = buf[0];
 
@@ -208,21 +222,22 @@ static size_t getFrameSize(const uint8_t *buf, size_t available)
 
     switch (cmd)
     {
-        // CAN frame (most common)
-        case 0xF1: // example: standard CAN frame
-        case 0xF2: // example: extended CAN frame
-        {
-            if (available < 2) return 0;
-            uint8_t len = buf[1];
-            return len + 2; // header + payload
-        }
-
-        default:
-            // fallback: treat as minimal frame
-            if (available >= 2)
-                return buf[1] + 2;
-
+    // CAN frame (most common)
+    case 0xF1: // example: standard CAN frame
+    case 0xF2: // example: extended CAN frame
+    {
+        if (available < 2)
             return 0;
+        uint8_t len = buf[1];
+        return len + 2; // header + payload
+    }
+
+    default:
+        // fallback: treat as minimal frame
+        if (available >= 2)
+            return buf[1] + 2;
+
+        return 0;
     }
 }
 
@@ -233,12 +248,20 @@ void WiFiManager::loop()
 
     int i;
 
+    bool apClientConnected = false;
+
     if (WiFi.isConnected() || settings.wifiMode == 2)
     {
         if (wifiServer.hasClient())
         {
             for (i = 0; i < MAX_CLIENTS; i++)
             {
+                if (SysSettings.clientNodes[i] &&
+                    SysSettings.clientNodes[i].connected())
+                {
+                    apClientConnected = true;
+                }
+
                 if (!SysSettings.clientNodes[i] || !SysSettings.clientNodes[i].connected())
                 {
                     if (SysSettings.clientNodes[i])
@@ -352,6 +375,11 @@ void WiFiManager::loop()
     }
 
     ArduinoOTA.handle();
+
+    if (settings.wifiMode == 2)
+    {
+        rgbWifiAPClientConnected(apClientConnected);
+    }
 }
 
 void WiFiManager::sendBufferedData()
@@ -411,7 +439,7 @@ void WiFiManager::sendBufferedData()
         if (sent > 0)
         {
             wifiBytesSent += sent;
-            
+
             wifiGVRET.consume(sent);
         }
         else
