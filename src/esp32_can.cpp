@@ -199,11 +199,15 @@ bool ESP32CAN::isInErrorState()
     );
 }
 
-void ESP32CAN::setListenOnlyMode(bool state)
+void ESP32CAN::setListenOnlyMode(bool state, uint32_t baudrate)
 {
     disable();
-    g_config.mode = state ? TWAI_MODE_LISTEN_ONLY : TWAI_MODE_NORMAL;
-    begin(500000);
+
+    g_config.mode =
+        state ? TWAI_MODE_LISTEN_ONLY
+              : TWAI_MODE_NORMAL;
+
+    begin(baudrate);
 }
 
 void ESP32CAN::setCANPins(gpio_num_t rxPin, gpio_num_t txPin)

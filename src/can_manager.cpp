@@ -70,11 +70,11 @@ void CANManager::setup()
 
             if (settings.canSettings[i].listenOnly)
             {
-                canBuses[i]->setListenOnlyMode(true);
+                canBuses[i]->setListenOnlyMode(true, settings.canSettings[i].nomSpeed);
             }
             else
             {
-                canBuses[i]->setListenOnlyMode(false);
+                canBuses[i]->setListenOnlyMode(false, settings.canSettings[i].nomSpeed);
             }
             canBuses[i]->watchFor();
         }

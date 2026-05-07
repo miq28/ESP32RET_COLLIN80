@@ -110,7 +110,7 @@ public:
     inline uint32_t readFD(CAN_FRAME_FD &msg) { return get_rx_buffFD(msg); }
 
     virtual void watchFor() {}
-    virtual void setListenOnlyMode(bool) {}
+    virtual void setListenOnlyMode(bool, uint32_t) {}
 
     virtual bool supportsFDMode() { return false; }
 
@@ -138,7 +138,7 @@ public:
     uint32_t get_rx_buff(CAN_FRAME &frame) override;
     uint16_t available() override;
 
-    void setListenOnlyMode(bool state) override;
+    void setListenOnlyMode(bool state, uint32_t baudrate) override;
 
     void setCANPins(gpio_num_t rxPin, gpio_num_t txPin);
 
